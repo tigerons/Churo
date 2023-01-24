@@ -1,0 +1,58 @@
+---
+- hosts: localhost
+  vars:
+    - server_hostname: "your_server_name"
+    - key_size: 4096
+    - key_type: RSA
+    - ca_key_dir: "/etc/ssl/labCA/private/"
+    - ca_cert_dir: "/etc/ssl/labCA/certs/"
+    - ca_key_path: "/etc/ssl/labCA/private/ca.pem"
+    - ca_cert_path: "/etc/ssl/labCA/certs/ca.cert"
+  tasks:
+    - name: Create CA directory if it does not exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+      with_items:
+        - "{{ ca_key_dir }}"
+        - "{{ ca_cert_dir }}"
+
+    - name: Generate an OpenSSL CA private key
+      openssl_privatekey:
+        path: "{{ ca_key_path }}"
+        size: "{{ key_size }}"
+        type: "{{ key_type }}"
+        backup: yes
+
+    - name: Generate an OpenSSL CA Certificate Signing Request with Subject
+      openssl_csr:
+        path: "{{ ca_cert_path }}"
+        privatekey_path: "{{ ca_key_path }}"
+        common_name: "my-ca"
+
+    - name: Generate a Self Signed OpenSSL CA certificate
+      openssl_certificate:
+        path: "{{ ca_cert_path }}"
+        privatekey_path: "{{ ca_key_path }}"
+        csr_path: "{{ ca_cert_path }}"
+        provider: selfsigned
+
+    - name: create host private key
+      openssl_privatekey:
+        path: "{{ ca_key_dir }}/{{ server_hostname }}.pem"
+      register: server_key
+
+    - name: create the CSR for the server
+      openssl_csr:
+        path: "{{ ca_cert_dir }}/{{ server_hostname }}.csr"
+        privatekey_path: "{{ server_key.filename }}"
+        common_name: "{{ server_hostname }}"
+      register: server_csr
+
+    - name: sign the CSR for the server
+      openssl_certificate:
+        path: "{{ ca_cert_dir }}/{{ server_hostname }}.crt"
+        csr_path: "{{ server_csr.filename }}"
+        provider: ownca
+        ownca_path: "{{ ca_cert_path }}"
+        ownca_privatekey_path: "{{ ca_key_path }}"
